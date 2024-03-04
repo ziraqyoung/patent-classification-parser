@@ -1,0 +1,11 @@
+/data/*
+!/data/.keep
+/json/*
+!/json/.keep
+/sql/*
+!/sql/.keep
+/test/*
+!/test/.keep
+/text/*
+!/text/.keep
+
