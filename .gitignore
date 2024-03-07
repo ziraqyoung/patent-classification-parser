@@ -1,6 +1,6 @@
 /data/*
 !/data/.keep
-/json/*
+# /json/*
 !/json/.keep
 /sql/*
 !/sql/.keep
