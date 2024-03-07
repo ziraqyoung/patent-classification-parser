@@ -1,6 +1,6 @@
-require 'nokogiri'
 require 'json'
 require 'debug'
+require 'nokogiri'
 
 # Parses XML CPC classifications to JSON
 class CpcParser
@@ -24,28 +24,32 @@ class CpcParser
 
   def parse_level2(item)
     symbol = find_symbol item
-    title = find_title item
+    title = build_title item
     nodes = select_items(item)
 
     level3_items = nodes.collect { |node| parse_level3(node) }
 
-    {
-      'cpcSectionCode' => symbol.text,
-      'cpcSectionName' => title,
-      'cpcSubSections' => level3_items
-    }
+    format_hash(
+      {
+        'cpcSectionCode' => symbol.text,
+        'cpcSectionName' => format_text(title),
+        'cpcSubsections' => level3_items
+      }
+    )
   end
 
   def parse_level3(item)
-    title = find_title(item)
+    title = build_title(item)
     nodes = select_items(item)
 
     level4_items = nodes.collect { |node| parse_level4(node) }
 
-    {
-      'cpcSubSectionName' => (title unless title.nil?),
-      'cpcClasses' => level4_items
-    }.compact
+    format_hash(
+      {
+        'cpcSubsectionName' => format_text(title),
+        'cpcClasses' => level4_items
+      }
+    )
   end
 
   def parse_level4(item)
@@ -55,11 +59,13 @@ class CpcParser
     nodes = select_items item
     level5_items = nodes.collect { |node| parse_level5(node) }
 
-    {
-      'cpcClassCode' => symbol.text,
-      'cpcClassName' => title,
-      'cpcSubSections' => level5_items
-    }
+    format_hash(
+      {
+        'cpcClassCode' => symbol.text,
+        'cpcClassName' => format_text(title),
+        'cpcSubClasses' => level5_items
+      }
+    )
   end
 
   # NOTE: has `notes-and-warning` if needed
@@ -70,11 +76,13 @@ class CpcParser
     link_file = item['link-file']
 
     # may be save `notes and warning`
-    {
-      'cpcSubClassCode' => symbol.text,
-      'cpcSubClassName' => title,
-      'cpcGroups' => parse_link_file(link_file)
-    }
+    format_hash(
+      {
+        'cpcSubClassCode' => symbol.text,
+        'cpcSubClassName' => format_text(title),
+        'cpcGroups' => parse_link_file(link_file)
+      }
+    )
   end
 
   # NOTE: Good place to find <reference>
@@ -114,47 +122,90 @@ class CpcParser
     nodes = select_items item
     level8_items = nodes.collect { |node| parse_level8(node) }
 
-    # flattened = item.search 'classification-item'
-
-    # stripped = flattened.collect do |child|
-
-    #   [child['sort-key'], build_title(child) ]
-    # end
-
-    {
-      'cpcGroupCode' => symbol.text.sub(prefix, ''),
-      'cpcGroupName' => title,
-      'cpcSubGroups' => level8_items
-    }
+    format_hash(
+      {
+        'cpcGroupCode' => symbol.text.sub(prefix, ''),
+        'cpcGroupName' => format_text(title),
+        'cpcSubGroups' => level8_items
+      }
+    )
   end
 
   def parse_level8(item)
     symbol = find_symbol item
-    title = item.elements.find { |child| child.name == 'class-title' }
+    title = build_title item
 
-    title_parts = title.search('text').map(&:text).join('; ')
-    j
     nodes = select_items item
     level9_items = nodes.collect { |node| parse_level9(node) }
 
-    # [symbol.text, title_parts]
-    {
-      'cpcSubGroupCode' => symbol.text,
-      'cpcSubGroupName' => title_parts,
-      'cpcSubSubGroup' => level9_items
-    }
+    format_hash(
+      {
+        'cpcSubGroupCode' => symbol.text,
+        'cpcSubGroupName' => format_text(title),
+        'cpcLevel1SubGroups' => level9_items
+      }
+    )
   end
 
   def parse_level9(item)
     symbol = find_symbol item
-    title = find_title item
+    title = build_title item
+
+    nodes = select_items item
+    level10_items = nodes.collect { |node| parse_level10(node) }
 
     # binding.b if symbol.text == 'A01B1/028'
 
-    {
-      'cpcSubdivisionCode' => symbol.text,
-      'cpcSubdivisionName' => title
-    }
+    format_hash(
+      {
+        'cpcLevel1SubGroupCode' => symbol.text,
+        'cpcLevel1SubGroupName' => format_text(title),
+        'cpcLevel2SubGroups' => level10_items
+      }
+    )
+  end
+
+  def parse_level10(item)
+    symbol = find_symbol item
+    title = build_title item
+
+    nodes = select_items item
+    level11_items = nodes.collect { |node| parse_level11(node) }
+
+    # binding.b if symbol.text == 'A01B1/028'
+
+    format_hash(
+      {
+        'cpcLevel2SubGroupCode' => symbol.text,
+        'cpcLevel2SubGroupName' => format_text(title),
+        'cpcLevel3SubGroups' => level11_items
+      }
+    )
+  end
+
+  def parse_level11(item)
+    symbol = find_symbol item
+    title = build_title item
+
+    nodes = select_items item
+    level12_items = nodes.collect { |node| parse_level12(node) }
+
+    # binding.b if symbol.text == 'A01B1/028'
+
+    format_hash(
+      {
+        'cpcLevel3SubGroupCode' => symbol.text,
+        'cpcLevel3SubGroupName' => format_text(title),
+        'cpcLevel4SubGroups' => level12_items
+      }
+    )
+  end
+
+  def parse_level12(item)
+    symbol = find_symbol item
+    title = build_title item
+
+    format_hash({ 'cpcLevel4SubGroupCode' => symbol.text, 'cpcLevel4SubGroupName' => format_text(title) })
   end
 
   def find_symbol(item)
@@ -162,34 +213,43 @@ class CpcParser
   end
 
   def find_title(item)
-    title = find_title_from_class_title(item) # || find_title_from_nested_classification_item(item)
+    title = item.elements.find { |child| child.name == 'class-title' }
 
-    title&.text&.strip&.gsub(/\s+/, ' ')
-  end
+    # check if first-level nested has <classification-item> that has <class-title>
+    # Handle A99 classification
+    if (symbol = find_symbol(item)) && !title
+      node = select_items(item).first
+      nested_symbol = find_symbol(node)
+      if nested_symbol.text == symbol.text
+        title = node.elements.find do |child|
+          child.name == 'class-title' && child.elements
+        end
+      end
+    end
 
-  def find_title_from_class_title(item)
-    item.elements.find { |child| child.name == 'class-title' }
-  end
-
-  def find_title_from_nested_classification_item(item)
-    inner_items = item.elements.select { |child| child.name == 'classification-item' }
-
-    raise 'Hell, no' if inner_items.length > 1
-
-    find_title_from_class_title(inner_items.first)
+    title
   end
 
   def build_title(item)
-    node = item.elements.find { |child| child.name == 'class-title' }
+    node = find_title(item)
 
     title_strings = node.elements.collect do |title_part|
-      title_part.elements.find { |child| child.name == 'text' }&.text&.strip&.gsub(/\s+/, ' ')
+      title_part.elements.find { |child| child.search('text') }&.text&.strip
     end
+
     title_strings.join('; ')
   end
 
   def select_items(item)
     item.elements.select { |child| child.name == 'classification-item' }
+  end
+
+  def format_hash(hash)
+    hash.compact.delete_if { |_k, v| v.empty? }
+  end
+
+  def format_text(text)
+    text&.strip&.gsub(/\s+/, ' ')
   end
 end
 
@@ -224,11 +284,10 @@ class ExportToSingle
   end
 end
 
-@full_json = ExportToSingle.new
-@full_json.export
-
 def parse_all
   puts '==== Staring export ===='
+  # xml_fnames = ['cpc-scheme-A.xml']
+
   xml_fnames = ['cpc-scheme-A.xml', 'cpc-scheme-B.xml', 'cpc-scheme-C.xml', 'cpc-scheme-D.xml', 'cpc-scheme-E.xml',
                 'cpc-scheme-F.xml', 'cpc-scheme-G.xml', 'cpc-scheme-H.xml', 'cpc-scheme-Y.xml']
 
@@ -245,7 +304,11 @@ def parse_all
   end
   puts '==== Fininshed export ===='
 end
-# parse_all
+
+parse_all
+
+# @full_json = ExportToSingle.new
+# @full_json.export
 
 if __FILE__ == $0
   require 'minitest/autorun'
